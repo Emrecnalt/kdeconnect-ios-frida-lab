@@ -21,6 +21,10 @@ jobs:
           d=plistlib.loads(p.read_bytes())
           d['CFBundleDisplayName']='KDE Connect Lab'
           p.write_bytes(plistlib.dumps(d))
+          settings=Path('source/KDE Connect/Swift Backend/KdeConnectSettings.swift')
+          text=settings.read_text()
+          assert 'let group = "5433B4KXM8.org.kde.kdeconnect"' in text
+          settings.write_text(text.replace('let group = "5433B4KXM8.org.kde.kdeconnect"', 'let group: String? = nil'))
           Path('source/KDE Connect/Lab.entitlements').write_bytes(plistlib.dumps({'get-task-allow': True}))
           PY
       - name: Build device Debug app without signing
