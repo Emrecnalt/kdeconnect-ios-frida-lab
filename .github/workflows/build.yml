@@ -1,0 +1,52 @@
+name: Build unsigned KDE Connect Lab
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Fetch pinned upstream source
+        run: |
+          git clone https://github.com/KDE/kdeconnect-ios.git source
+          git -C source checkout 5d8bb8b6d26b8092b00a410192acfeaab6c9ec82
+      - name: Configure separate lab app
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          p=Path('source/KDE Connect/Info.plist')
+          d=plistlib.loads(p.read_bytes())
+          d['CFBundleDisplayName']='KDE Connect Lab'
+          p.write_bytes(plistlib.dumps(d))
+          Path('source/KDE Connect/Lab.entitlements').write_bytes(plistlib.dumps({'get-task-allow': True}))
+          PY
+      - name: Build device Debug app without signing
+        run: |
+          set -o pipefail
+          xcodebuild -project 'source/KDE Connect.xcodeproj' -scheme 'KDE Connect' \
+            -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' \
+            PRODUCT_BUNDLE_IDENTIFIER=io.github.emrecnalt.kdeconnectlab \
+            CODE_SIGN_ENTITLEMENTS='KDE Connect/Lab.entitlements' \
+            build > build.log 2>&1 || { tail -100 build.log; exit 1; }
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p package/Payload
+          ditto 'build/Build/Products/Debug-iphoneos/KDE Connect.app' 'package/Payload/KDE Connect Lab.app'
+          cp 'source/KDE Connect/Lab.entitlements' lab-entitlements.plist
+          (cd package && zip -qry ../KDE-Connect-Lab-unsigned.ipa Payload)
+          shasum -a 256 KDE-Connect-Lab-unsigned.ipa > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kdeconnect-lab
+          retention-days: 1
+          path: |
+            KDE-Connect-Lab-unsigned.ipa
+            SHA256SUMS
+            lab-entitlements.plist
+            build.log
